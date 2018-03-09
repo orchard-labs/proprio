@@ -11,7 +11,8 @@
             AWSStaticCredentialsProvider
             AWSCredentialsProvider
             BasicAWSCredentials
-            DefaultAWSCredentialsProviderChain]
+            DefaultAWSCredentialsProviderChain
+            ProfileCredentialsProvider]
            [com.amazonaws.services.kinesis
             AmazonKinesis
             AmazonKinesisClientBuilder]
@@ -57,10 +58,15 @@
   "config must be a configuration map or an implementation of AmazonKinesis")
 
 (defn credential-provider
-  [{:keys [access-key secret-key] :as opts}]
-  (if (and (not-empty access-key) (not-empty secret-key))
-    (AWSStaticCredentialsProvider.
-      (BasicAWSCredentials. access-key secret-key))
+  [{:keys [access-key secret-key profile]}]
+  (cond
+    (and (not-empty access-key) (not-empty secret-key))
+    (AWSStaticCredentialsProvider. (BasicAWSCredentials. access-key secret-key))
+
+    (not-empty profile)
+    (ProfileCredentialsProvider. profile)
+
+    :else
     (DefaultAWSCredentialsProviderChain.)))
 
 ;; Use SDK for outbound
