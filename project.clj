@@ -1,4 +1,4 @@
-(defproject ca.orchard-labs/proprio "1.1.0"
+(defproject ca.orchard-labs/proprio "1.1.1-SNAPSHOT"
   :description "A library for interacting with AWS Kinesis"
   :url "http://github.com/orchard-labs/proprio"
   :license {:name "Eclipse Public License"
