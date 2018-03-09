@@ -1,2 +1,3 @@
 (ns user
-  (:require []))
+  (:require [proprio.core :as proprio]
+            [clojure.repl :refer :all]))
