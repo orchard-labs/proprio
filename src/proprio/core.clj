@@ -11,7 +11,8 @@
             AWSStaticCredentialsProvider
             AWSCredentialsProvider
             BasicAWSCredentials
-            DefaultAWSCredentialsProviderChain
+            DefaultAWSCredentialsProviderChain]
+           [com.amazonaws.auth.profile
             ProfileCredentialsProvider]
            [com.amazonaws.services.kinesis
             AmazonKinesis
