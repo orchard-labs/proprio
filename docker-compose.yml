@@ -6,8 +6,10 @@ services:
     image: orchard-labs/proprio
     command: ash -c "lein run"
     environment:
-      KINESIS_ENDPOINT: "http://kinesis:4567"
-      DYNAMO_URL:       "http://dyn:7777"
+      KINESIS_ENDPOINT:      "http://kinesis:4567"
+      DYNAMO_URL:            "http://dyn:7777"
+      AWS_ACCESS_KEY_ID:     "local"
+      AWS_SECRET_ACCESS_KEY: "local"
       # https://github.com/mhart/kinesalite/issues/31
       AWS_CBOR_DISABLE: "true"
     volumes:
