@@ -20,7 +20,7 @@ fi
 
 if [ -d /artifacts ]; then
     cp -r target/test2junit/html /artifacts
-    cp -r target/default/doc /codox
+    cp -r target/doc /codox
 fi
 
 # clean root-owned artifacts, let deploy make new ones
