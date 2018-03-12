@@ -26,11 +26,17 @@
             InitializationInput
             ProcessRecordsInput
             ShutdownInput]
+           [com.amazonaws.services.kinesis.clientlibrary.exceptions
+            ThrottlingException
+            ShutdownException
+            InvalidStateException]
            [com.amazonaws.services.kinesis.metrics.interfaces
             MetricsLevel]
            [com.amazonaws.services.kinesis.clientlibrary.interfaces.v2
             IRecordProcessor
             IRecordProcessorFactory]
+           [com.amazonaws.services.kinesis.clientlibrary.interfaces
+            IRecordProcessorCheckpointer]
            [com.amazonaws.services.kinesis.model
             CreateStreamRequest
             CreateStreamResult
@@ -239,23 +245,63 @@
         (withRegionName region)
         (withMetricsLevel (MetricsLevel/fromName metrics-level)))))
 
+(defn- maybe-checkpoint
+  "Run a checkpoint if more time has passed than `interval` seconds
+  since `last-checkpoint`."
+  [last-checkpoint
+   ^IRecordProcessorCheckpointer checkpointer
+   {:keys [interval backoff tries]
+    :or   {interval 60
+           backoff  3
+           tries    10}
+    :as   opts}]
+  (let [now      (System/currentTimeMillis)
+        interval (* 1000 interval)]
+    (if (> now (+ last-checkpoint interval))
+      ;; Can't recur from inside a catch block, so jump through some hoops
+      (let [res (try
+                  (.checkpoint checkpointer)
+                  :success
+                  ;; during shutdown failure is a no-op
+                  (catch ShutdownException _ :success)
+                  (catch Throwable ex ex))]
+        (cond
+          ;; error was thrown, but there are remaining retries
+          (and (not= :success res) (< 0 tries))
+          (do (Thread/sleep (* 1000 backoff))
+              (recur last-checkpoint checkpointer (update opts :tries dec)))
+
+          ;; no more retries, and there was an error
+          (instance? Throwable res)
+          (throw res)
+
+          ;; otherwise we're good
+          :else now)))))
+
 (defn ^IRecordProcessorFactory processor-factory
-  [handler decoder-fn]
-  (reify IRecordProcessorFactory
-    (createProcessor [_]
-      (reify IRecordProcessor
-        (^void initialize [_ ^InitializationInput input]
-         (log/info "Initializing Kinesis record processor"))
-        (^void processRecords [_ ^ProcessRecordsInput input]
-         (let [records (.getRecords input)]
-           (doseq [^Record record records
-                   :let [record-map {:partition-key (.getPartitionKey record)
-                                     :sequence-number (.getSequenceNumber record)
-                                     :data (decoder-fn (.getData record))}]]
-             (handler record-map))))
-        (^void shutdown [_ ^ShutdownInput input]
-         (log/infof "Shutting down Kinesis record processor: %s"
-                    (.getShutdownReason input)))))))
+  ([handler decoder-fn]
+   (processor-factory handler decoder-fn {}))
+  ([handler decoder-fn opts]
+   (reify IRecordProcessorFactory
+     (createProcessor [_]
+       (let [checkpoint (agent 0 :error-mode :continue
+                               :error-handler
+                               #(log/errorf %2 "Checkpoint agent %s threw an error" %1))]
+         (reify IRecordProcessor
+           (^void initialize [_ ^InitializationInput input]
+            (log/info "Initializing Kinesis record processor"))
+           (^void processRecords [_ ^ProcessRecordsInput input]
+            (let [records (.getRecords input)]
+              (doseq [^Record record records
+                      :let [record-map {:partition-key (.getPartitionKey record)
+                                        :sequence-number (.getSequenceNumber record)
+                                        :data (decoder-fn (.getData record))}]]
+                (handler record-map))
+              ;; Checkpoint asynchronously
+              (send-off checkpoint maybe-checkpoint (.getCheckpointer input) opts)))
+           (^void shutdown [_ ^ShutdownInput input]
+            (log/infof "Shutting down Kinesis record processor: %s"
+                       (.getShutdownReason input)))))))))
 
 (defn decode-json
   [^ByteBuffer byte-buffer]

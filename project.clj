@@ -8,7 +8,7 @@
                  [org.clojure/tools.logging "0.4.0"]
                  [com.amazonaws/aws-java-sdk "1.11.289" :exclusions [joda-time]]
                  [com.amazonaws/aws-java-sdk-dynamodb "1.11.289"]
-                 [com.amazonaws/amazon-kinesis-client "1.8.0" :exclusions [joda-time]]
+                 [com.amazonaws/amazon-kinesis-client "1.8.10" :exclusions [joda-time]]
                  [cheshire "5.8.0"] ;; json
                  ;; inline assertions, gradual typing, kinda
                  [com.taoensso/truss "1.5.0"]
