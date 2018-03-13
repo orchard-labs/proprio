@@ -3,10 +3,7 @@
             [morph.core :as morph]
             [cheshire.core :as json])
   (:import [com.amazonaws
-            AmazonClientException
-            ClientConfiguration
-            PredefinedClientConfigurations
-            AmazonServiceException]
+            PredefinedClientConfigurations]
            [com.amazonaws.auth
             AWSStaticCredentialsProvider
             AWSCredentialsProvider
@@ -20,7 +17,6 @@
            [com.amazonaws.services.kinesis.clientlibrary.lib.worker
             KinesisClientLibConfiguration
             InitialPositionInStream
-            Worker
             Worker$Builder]
            [com.amazonaws.services.kinesis.clientlibrary.types
             InitializationInput
@@ -38,23 +34,11 @@
            [com.amazonaws.services.kinesis.clientlibrary.interfaces
             IRecordProcessorCheckpointer]
            [com.amazonaws.services.kinesis.model
-            CreateStreamRequest
-            CreateStreamResult
-            DescribeStreamRequest
-            DescribeStreamResult
-            DeleteStreamRequest
-            DeleteStreamResult
             ListStreamsRequest
-            ListStreamsResult
             ListShardsRequest
-            ListShardsResult
             PutRecordRequest
-            PutRecordResult
             PutRecordsRequest
-            PutRecordsResult
             PutRecordsRequestEntry
-            ResourceNotFoundException
-            StreamDescription
             Record]
            [com.amazonaws.client.builder
             AwsClientBuilder$EndpointConfiguration]
