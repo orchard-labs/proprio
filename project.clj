@@ -27,9 +27,6 @@
                    :test-paths     ["test"]
                    :resource-paths ["resources" "dev/resources"]
 
-                   :injections [(require 'proprio.bootstrap)
-                                (proprio.bootstrap/init-stream)]
-
                    :dependencies [[circleci/bond "0.3.1"]
                                   [eftest "0.5.0"]
                                   [org.clojure/test.check "0.10.0-alpha2"]
