@@ -29,37 +29,66 @@
               (recur)
               (timeout-fn)))))))
 
+(defmacro with-stream
+  [[stream-sym stream-val config-sym config-val] & body]
+  (let [stream-sym (symbol (name stream-sym))
+        config-sym (symbol (name config-sym))]
+    `(let [~stream-sym  ~stream-val
+           ~config-sym  ~config-val
+           exists-pred# #(contains? (set (proprio/list-streams ~config-sym))
+                                    ~stream-sym)]
+       (when (exists-pred#)
+         (proprio/delete-stream ~config-sym ~stream-sym)
+         ;; deletion appears to be asynchronous
+         (wait-for #(not (exists-pred#))))
+       (proprio/create-stream ~config-sym ~stream-sym 1)
+       (do ~@body)
+       (proprio/delete-stream ~config-sym ~stream-sym)
+       (wait-for #(not (exists-pred#))))))
+
 (deftest round-trip-test
-  (let [counter (atom 0)
-        acc (atom [])
-        handler (fn [m]
-                  (swap! counter inc)
-                  (swap! acc conj (:data m)))
+  (with-stream [stream (test-stream)
+                config (test-config)]
+    (let [counter (atom 0)
+          acc (atom [])
+          handler (fn [m]
+                    (swap! counter inc)
+                    (swap! acc conj (:data m)))
 
-        test-records (mapv #(hash-map :number % :uuid (str (UUID/randomUUID)))
-                           (range 20))]
+          test-records (mapv #(hash-map :number % :uuid (str (UUID/randomUUID)))
+                             (range 20))
 
-    ;; start over
-    (when (contains? (set (proprio/list-streams test-config)) test-stream)
-      (proprio/delete-stream test-config test-stream))
-    ;; deletion appears to be asynchronous
-    (wait-for #(not (contains? (set (proprio/list-streams test-config)) test-stream)))
+          stop-fn (proprio/stream-worker config stream handler)]
 
-    ;; create the stream
-    (proprio/create-stream test-config test-stream 1)
-
-    ;; kick off a worker
-    (let [stop-fn (proprio/stream-worker test-config test-stream handler)]
-      ;; send some data
+      ;; kick off a worker
       (doseq [rs (partition-all 3 test-records)]
-        (proprio/put-records test-config test-stream "partition-key" rs))
+        (proprio/put-records config stream "partition-key" rs))
 
       ;; wait for it to finish
       (wait-for #(= 20 @counter))
       (is (= @acc test-records))
 
       ;; kill the loop
-      (stop-fn))
+      (stop-fn))))
 
-    ;; delete the stream
-    (proprio/delete-stream test-config test-stream)))
+(deftest checkpointing-test
+  (testing "checkpoint is called on startup"
+    (with-stream [stream (test-stream)
+                  config (test-config)]
+      (bond/with-spy [proprio/maybe-checkpoint]
+        (let [stop-fn (proprio/stream-worker config stream (fn [_] nil))
+              test-records (mapv #(hash-map :number % :uuid (str (UUID/randomUUID)))
+                                 (range 20))]
+          (is (= 0 (-> proprio/maybe-checkpoint bond/calls count)))
+
+          (doseq [rs (partition-all 3 test-records)]
+            (proprio/put-records config stream "partition-key" rs))
+
+          (Thread/sleep 10000)
+
+          ;; should get called 7 times, returning the same value each time
+          (wait-for #(<= 1 (-> proprio/maybe-checkpoint bond/calls count)))
+          (is (->> proprio/maybe-checkpoint
+                   (bond/calls)
+                   (map :returns)
+                   (apply =))))))))
