@@ -229,7 +229,7 @@
         (withRegionName region)
         (withMetricsLevel (MetricsLevel/fromName metrics-level)))))
 
-(defn- maybe-checkpoint
+(defn maybe-checkpoint
   "Run a checkpoint if more time has passed than `interval` seconds
   since `last-checkpoint`."
   [last-checkpoint
@@ -241,7 +241,8 @@
     :as   opts}]
   (let [now      (System/currentTimeMillis)
         interval (* 1000 interval)]
-    (if (> now (+ last-checkpoint interval))
+    (if-not (> now (+ last-checkpoint interval))
+      last-checkpoint ;; return the value of the agent
       ;; Can't recur from inside a catch block, so jump through some hoops
       (let [res (try
                   (.checkpoint checkpointer)
@@ -259,7 +260,7 @@
           (instance? Throwable res)
           (throw res)
 
-          ;; otherwise we're good
+          ;; otherwise we're good, return a new value for the agent
           :else now)))))
 
 (defn ^IRecordProcessorFactory processor-factory
@@ -284,6 +285,7 @@
               ;; Checkpoint asynchronously
               (send-off checkpoint maybe-checkpoint (.getCheckpointer input) opts)))
            (^void shutdown [_ ^ShutdownInput input]
+            (.. input (getCheckpointer) (checkpoint))
             (log/infof "Shutting down Kinesis record processor: %s"
                        (.getShutdownReason input)))))))))
 
