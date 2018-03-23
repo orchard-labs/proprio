@@ -2,16 +2,18 @@
   (:require [proprio.core :as proprio]
             [clojure.tools.logging :as log]
             [environ.core :refer [env]])
-  (:import [com.amazonaws.services.kinesis AmazonKinesis]))
+  (:import [com.amazonaws.services.kinesis AmazonKinesis]
+           [java.util UUID]))
 
-(def test-config
+(defn test-config []
   {:region        "us-east-1"
    :endpoint      (env :kinesis-endpoint "http://localhost:4567")
    :dynamo-url    (env :dynamo-url "http://localhost:7777")
-   :app-name      "proprio-test"
+   :app-name      (str "proprio-test-" (UUID/randomUUID))
    :metrics-level "NONE"})
 
-(def test-stream "proprio-test-stream")
+(defn test-stream []
+  (str "proprio-test-stream-" (UUID/randomUUID)))
 
 (defn init-stream
   "This function is here for use as a leiningen injection in the context
@@ -28,4 +30,4 @@
      :else
      (throw (ex-info proprio/config-error-message {:config config :stream stream}))))
   ([]
-   (init-stream test-config test-stream)))
+   (init-stream (test-config) (test-stream))))

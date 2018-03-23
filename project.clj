@@ -1,4 +1,4 @@
-(defproject ca.orchard-labs/proprio "1.1.1-SNAPSHOT"
+(defproject ca.orchard-labs/proprio "1.2.0-SNAPSHOT"
   :description "A library for interacting with AWS Kinesis"
   :url "http://github.com/orchard-labs/proprio"
   :license {:name "Eclipse Public License"
@@ -8,7 +8,7 @@
                  [org.clojure/tools.logging "0.4.0"]
                  [com.amazonaws/aws-java-sdk "1.11.289" :exclusions [joda-time]]
                  [com.amazonaws/aws-java-sdk-dynamodb "1.11.289"]
-                 [com.amazonaws/amazon-kinesis-client "1.8.0" :exclusions [joda-time]]
+                 [com.amazonaws/amazon-kinesis-client "1.8.10" :exclusions [joda-time]]
                  [cheshire "5.8.0"] ;; json
                  ;; inline assertions, gradual typing, kinda
                  [com.taoensso/truss "1.5.0"]
@@ -26,9 +26,6 @@
   :profiles {:dev {:source-paths   ["src" "dev/src"]
                    :test-paths     ["test"]
                    :resource-paths ["resources" "dev/resources"]
-
-                   :injections [(require 'proprio.bootstrap)
-                                (proprio.bootstrap/init-stream)]
 
                    :dependencies [[circleci/bond "0.3.1"]
                                   [eftest "0.5.0"]

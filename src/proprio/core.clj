@@ -3,10 +3,7 @@
             [morph.core :as morph]
             [cheshire.core :as json])
   (:import [com.amazonaws
-            AmazonClientException
-            ClientConfiguration
-            PredefinedClientConfigurations
-            AmazonServiceException]
+            PredefinedClientConfigurations]
            [com.amazonaws.auth
             AWSStaticCredentialsProvider
             AWSCredentialsProvider
@@ -20,35 +17,28 @@
            [com.amazonaws.services.kinesis.clientlibrary.lib.worker
             KinesisClientLibConfiguration
             InitialPositionInStream
-            Worker
             Worker$Builder]
            [com.amazonaws.services.kinesis.clientlibrary.types
             InitializationInput
             ProcessRecordsInput
             ShutdownInput]
+           [com.amazonaws.services.kinesis.clientlibrary.exceptions
+            ThrottlingException
+            ShutdownException
+            InvalidStateException]
            [com.amazonaws.services.kinesis.metrics.interfaces
             MetricsLevel]
            [com.amazonaws.services.kinesis.clientlibrary.interfaces.v2
             IRecordProcessor
             IRecordProcessorFactory]
+           [com.amazonaws.services.kinesis.clientlibrary.interfaces
+            IRecordProcessorCheckpointer]
            [com.amazonaws.services.kinesis.model
-            CreateStreamRequest
-            CreateStreamResult
-            DescribeStreamRequest
-            DescribeStreamResult
-            DeleteStreamRequest
-            DeleteStreamResult
             ListStreamsRequest
-            ListStreamsResult
             ListShardsRequest
-            ListShardsResult
             PutRecordRequest
-            PutRecordResult
             PutRecordsRequest
-            PutRecordsResult
             PutRecordsRequestEntry
-            ResourceNotFoundException
-            StreamDescription
             Record]
            [com.amazonaws.client.builder
             AwsClientBuilder$EndpointConfiguration]
@@ -239,23 +229,65 @@
         (withRegionName region)
         (withMetricsLevel (MetricsLevel/fromName metrics-level)))))
 
+(defn maybe-checkpoint
+  "Run a checkpoint if more time has passed than `interval` seconds
+  since `last-checkpoint`."
+  [last-checkpoint
+   ^IRecordProcessorCheckpointer checkpointer
+   {:keys [interval backoff tries]
+    :or   {interval 60
+           backoff  3
+           tries    10}
+    :as   opts}]
+  (let [now      (System/currentTimeMillis)
+        interval (* 1000 interval)]
+    (if-not (> now (+ last-checkpoint interval))
+      last-checkpoint ;; return the value of the agent
+      ;; Can't recur from inside a catch block, so jump through some hoops
+      (let [res (try
+                  (.checkpoint checkpointer)
+                  :success
+                  ;; during shutdown failure is a no-op
+                  (catch ShutdownException _ :success)
+                  (catch Throwable ex ex))]
+        (cond
+          ;; error was thrown, but there are remaining retries
+          (and (not= :success res) (< 0 tries))
+          (do (Thread/sleep (* 1000 backoff))
+              (recur last-checkpoint checkpointer (update opts :tries dec)))
+
+          ;; no more retries, and there was an error
+          (instance? Throwable res)
+          (throw res)
+
+          ;; otherwise we're good, return a new value for the agent
+          :else now)))))
+
 (defn ^IRecordProcessorFactory processor-factory
-  [handler decoder-fn]
-  (reify IRecordProcessorFactory
-    (createProcessor [_]
-      (reify IRecordProcessor
-        (^void initialize [_ ^InitializationInput input]
-         (log/info "Initializing Kinesis record processor"))
-        (^void processRecords [_ ^ProcessRecordsInput input]
-         (let [records (.getRecords input)]
-           (doseq [^Record record records
-                   :let [record-map {:partition-key (.getPartitionKey record)
-                                     :sequence-number (.getSequenceNumber record)
-                                     :data (decoder-fn (.getData record))}]]
-             (handler record-map))))
-        (^void shutdown [_ ^ShutdownInput input]
-         (log/infof "Shutting down Kinesis record processor: %s"
-                    (.getShutdownReason input)))))))
+  ([handler decoder-fn]
+   (processor-factory handler decoder-fn {}))
+  ([handler decoder-fn opts]
+   (reify IRecordProcessorFactory
+     (createProcessor [_]
+       (let [checkpoint (agent 0 :error-mode :continue
+                               :error-handler
+                               #(log/errorf %2 "Checkpoint agent %s threw an error" %1))]
+         (reify IRecordProcessor
+           (^void initialize [_ ^InitializationInput input]
+            (log/info "Initializing Kinesis record processor"))
+           (^void processRecords [_ ^ProcessRecordsInput input]
+            (let [records (.getRecords input)]
+              (doseq [^Record record records
+                      :let [record-map {:partition-key (.getPartitionKey record)
+                                        :sequence-number (.getSequenceNumber record)
+                                        :data (decoder-fn (.getData record))}]]
+                (handler record-map))
+              ;; Checkpoint asynchronously
+              (send-off checkpoint maybe-checkpoint (.getCheckpointer input) opts)))
+           (^void shutdown [_ ^ShutdownInput input]
+            (.. input (getCheckpointer) (checkpoint))
+            (log/infof "Shutting down Kinesis record processor: %s"
+                       (.getShutdownReason input)))))))))
 
 (defn decode-json
   [^ByteBuffer byte-buffer]
